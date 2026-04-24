@@ -1,0 +1,16 @@
+# Virtual environment — NEVER commit this
+venv/
+env/
+.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Datasets — too large
+datasets/
+
+# Logs
+*.log
