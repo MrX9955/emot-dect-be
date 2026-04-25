@@ -18,11 +18,12 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install CPU-only PyTorch first, then fer (prevents fer from pulling GPU torch + CUDA libs)
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir fer>=22.5.1
+
 # Copy application code
 COPY . .
 
-# Expose port
-EXPOSE 8000
-
-# Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the application (use PORT env var provided by Railway)
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
