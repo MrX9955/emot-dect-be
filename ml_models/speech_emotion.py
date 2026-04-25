@@ -30,6 +30,7 @@ def load_speech_model():
         return _speech_model
 
     if not os.path.exists(MODEL_PATH):
+        logger.warning("Speech model not found — using demo mode")
         return None
 
     try:
@@ -38,7 +39,6 @@ def load_speech_model():
 
         _speech_model = tf.keras.models.load_model(MODEL_PATH)
 
-        # Load label encoder if available
         if os.path.exists(ENCODER_PATH):
             with open(ENCODER_PATH, "rb") as f:
                 _label_encoder = pickle.load(f)
@@ -47,6 +47,9 @@ def load_speech_model():
             logger.info("✅ Speech model loaded (no encoder found).")
 
         return _speech_model
+    except ImportError:
+        logger.warning("TensorFlow not installed — speech running in demo mode")
+        return None
     except Exception as e:
         logger.error(f"Failed to load speech model: {e}")
         return None

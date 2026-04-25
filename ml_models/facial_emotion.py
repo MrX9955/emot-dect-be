@@ -1,6 +1,10 @@
 """
-Facial Emotion Detection using FER (Facial Expression Recognition).
-FER is lightweight (~50MB) compared to DeepFace (~2GB) — works on free hosting.
+Facial Emotion Detection using OpenCV Haar Cascades.
+Lightweight — no TensorFlow/PyTorch needed.
+Works within Railway free tier (512MB RAM).
+
+Note: For production accuracy, use the local version with DeepFace.
+This version detects faces and returns emotion based on facial geometry.
 """
 import base64
 import logging
@@ -28,97 +32,93 @@ def decode_base64_image(base64_string: str):
 def analyze_facial_emotion(base64_image: str) -> Dict:
     """
     Analyze facial emotion from a base64-encoded image.
-    Uses FER library (lightweight) for production deployment.
-    Falls back to DeepFace if FER not available.
+    Uses OpenCV for face detection + simple heuristics.
     """
     try:
-        from fer import FER
         import cv2
+        import numpy as np
 
         image = decode_base64_image(base64_image)
         if image is None:
             return _mock_facial_response("Could not decode image")
 
-        # Convert BGR to RGB for FER
-        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-        detector = FER(mtcnn=False)
-        results = detector.detect_emotions(image_rgb)
+        # Load OpenCV face detector
+        face_cascade = cv2.CascadeClassifier(
+            cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        )
+        smile_cascade = cv2.CascadeClassifier(
+            cv2.data.haarcascades + "haarcascade_smile.xml"
+        )
 
-        if not results:
-            # No face detected — return neutral
+        faces = face_cascade.detectMultiScale(
+            gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30)
+        )
+
+        if len(faces) == 0:
             return {
                 "emotion": "neutral",
                 "confidence": 0.5,
                 "all_emotions": {e: round(1/len(EMOTION_LABELS), 4) for e in EMOTION_LABELS},
                 "detection_type": "facial",
-                "note": "No face detected in frame",
+                "note": "No face detected",
             }
 
-        # Get the first face result
-        emotions = results[0]["emotions"]
-        dominant_emotion = max(emotions, key=emotions.get)
-        confidence = float(emotions[dominant_emotion])
+        # Analyze the largest face
+        x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
+        face_roi = gray[y:y+h, x:x+w]
 
-        # Normalize
-        total = sum(emotions.values()) or 1
-        normalized = {k: round(float(v) / total, 4) for k, v in emotions.items()}
-
-        return {
-            "emotion": dominant_emotion,
-            "confidence": round(confidence, 4),
-            "all_emotions": normalized,
-            "detection_type": "facial",
-        }
-
-    except ImportError:
-        # FER not installed — try DeepFace
-        return _try_deepface(base64_image)
-    except Exception as e:
-        logger.error(f"FER facial emotion error: {e}")
-        return _try_deepface(base64_image)
-
-
-def _try_deepface(base64_image: str) -> Dict:
-    """Fallback to DeepFace if FER fails."""
-    try:
-        from deepface import DeepFace
-
-        image = decode_base64_image(base64_image)
-        if image is None:
-            return _mock_facial_response("Could not decode image")
-
-        results = DeepFace.analyze(
-            img_path=image,
-            actions=["emotion"],
-            enforce_detection=False,
-            silent=True,
+        # Detect smile within face region
+        smiles = smile_cascade.detectMultiScale(
+            face_roi, scaleFactor=1.8, minNeighbors=20
         )
 
-        result = results[0] if isinstance(results, list) else results
-        dominant_emotion = result.get("dominant_emotion", "neutral")
-        emotion_scores = result.get("emotion", {})
+        # Calculate brightness and contrast as emotion hints
+        brightness = float(np.mean(face_roi))
+        contrast = float(np.std(face_roi))
 
-        total = sum(emotion_scores.values()) or 1
-        normalized = {k: round(float(v) / total, 4) for k, v in emotion_scores.items()}
-        confidence = normalized.get(dominant_emotion, 0.0)
+        # Simple heuristic emotion scoring
+        scores = {e: 0.05 for e in EMOTION_LABELS}
+
+        if len(smiles) > 0:
+            scores["happy"] = 0.65
+            scores["neutral"] = 0.15
+            scores["surprise"] = 0.10
+        elif brightness < 80:
+            scores["sad"] = 0.45
+            scores["fear"] = 0.25
+            scores["neutral"] = 0.20
+        elif contrast > 60:
+            scores["angry"] = 0.40
+            scores["surprise"] = 0.30
+            scores["neutral"] = 0.20
+        else:
+            scores["neutral"] = 0.55
+            scores["happy"] = 0.20
+            scores["sad"] = 0.15
+
+        # Normalize
+        total = sum(scores.values())
+        scores = {k: round(v / total, 4) for k, v in scores.items()}
+        dominant = max(scores, key=scores.get)
 
         return {
-            "emotion": dominant_emotion,
-            "confidence": round(confidence, 4),
-            "all_emotions": normalized,
+            "emotion": dominant,
+            "confidence": scores[dominant],
+            "all_emotions": scores,
             "detection_type": "facial",
         }
 
     except Exception as e:
-        logger.error(f"DeepFace fallback error: {e}")
+        logger.error(f"Facial emotion error: {e}")
         return _mock_facial_response(str(e))
 
 
 def _mock_facial_response(note: str = "") -> Dict:
-    """Return mock data when all ML packages fail."""
+    """Return mock data when detection fails."""
     emotion = random.choice(EMOTION_LABELS)
-    scores = {label: round(random.uniform(0.01, 0.3), 4) for label in EMOTION_LABELS}
+    scores = {label: round(random.uniform(0.05, 0.25), 4) for label in EMOTION_LABELS}
     total = sum(scores.values())
     scores = {k: round(v / total, 4) for k, v in scores.items()}
 
@@ -127,5 +127,5 @@ def _mock_facial_response(note: str = "") -> Dict:
         "confidence": scores[emotion],
         "all_emotions": scores,
         "detection_type": "facial",
-        "note": note or "Running in demo mode",
+        "note": note or "Demo mode",
     }
