@@ -1,0 +1,23 @@
+# Don't copy local env file into Docker image
+.env
+
+# Don't copy git history
+.git
+.gitignore
+.gitattributes
+
+# Don't copy virtual environment
+venv/
+env/
+
+# Don't copy Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Don't copy datasets (too large)
+datasets/
+
+# Don't copy logs
+*.log
