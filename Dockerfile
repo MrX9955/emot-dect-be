@@ -25,5 +25,5 @@ RUN pip install --no-cache-dir torch torchvision --index-url https://download.py
 # Copy application code
 COPY . .
 
-# Run the application (use PORT env var provided by Railway)
+# Run the application (PORT is provided by Render at runtime)
 CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
